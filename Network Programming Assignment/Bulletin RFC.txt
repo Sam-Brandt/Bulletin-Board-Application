@@ -1,0 +1,456 @@
+Request for Comments: CMSC481                                  S. Brandt
+                                                           December 2021
+
+                     Bulletin Board Project Protocol
+
+Abstract
+
+   This RCF outlines a protocol that a client and a server could use to
+   facilitate the transfer of data necesary for the funcitonality of a
+   simple bulletin board network application where the server hosts both
+   public and private bulletin boards called "groups" that can be read
+   from and posted to by multiple clients at any given time. This RFC
+   provides the necesary information for understanding how the existing
+   client and server applications that I have built communicate with
+   eachother and also for building a new application that can
+   successfully interact with one of my existing applications.
+
+Table of Contents
+
+   1. Ubiquitous String Formatting Rule . . . . . . . . . . . . . . . . 1
+   2. Sending A Large String  . . . . . . . . . . . . . . . . . . . . . 2
+   3. Username  . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+   4. Outside-Of-Chat Choices . . . . . . . . . . . . . . . . . . . . . 3
+      4.1. Sending an ID  . . . . . . . . . . . . . . . . . . . . . . . 3
+   5. In-Chat Choices . . . . . . . . . . . . . . . . . . . . . . . . . 3
+      5.1. Checking A Groups Existance  . . . . . . . . . . . . . . . . 3
+      5.2. Making The Choice  . . . . . . . . . . . . . . . . . . . . . 4
+      5.3. Requests For Data  . . . . . . . . . . . . . . . . . . . . . 5
+      5.4. Sending A Message Number . . . . . . . . . . . . . . . . . . 5
+      5.5. Reading A Specific Message . . . . . . . . . . . . . . . . . 6
+      5.6. Sending A Message  . . . . . . . . . . . . . . . . . . . . . 6
+      5.7. Deleting A Message . . . . . . . . . . . . . . . . . . . . . 6
+   6. One Final Example . . . . . . . . . . . . . . . . . . . . . . . . 7
+
+1. Ubiquitous String Formatting Rule
+
+   In order to get around programming inconviences imposed by Nagle's
+   algorithm in TCP, this protocol requires that all strings be appended
+   at the beginning with a ascii/unicode value that corresponds to the
+   length of the string before being sent. This gives a recieving host
+   enough information to extract the original sent string if it ends up
+   being concatened with other strings in the process of sending and
+   recieving. Here are some examples of strings formatted properly in
+   this way:
+
+      '\u0007example'
+
+      '\u000Fanother example'
+
+   From here on out, when ever the sending of a string is mentioned in
+   this RFC, it is implied that it is formatted in this way even if it
+   is not mentioned explicitly.
+
+
+Brandt                           Project                        [Page 1]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+2. Sending A Large String
+
+   When a host could be sending a potentially large string, this is done
+   by sending the string length as a string itself to the recieving host
+   and then sending the username itself in sequential 128 character
+   chunks. This process is shown below:
+
+      (Sending the string 'example' like this looks like:)
+      [RecievingHost] <-- '7' <-- [SendingHost]
+      [RecievingHost] <-- 'example' <-- [SendingHost]
+
+      (Sending the string (128 chars)+'example' like this looks like:)
+      [RecievingHost] <-- '135' <-- [SendingHost]
+      [RecievingHost] <-- (128 chars) <-- [SendingHost]
+      [RecievingHost] <-- example <-- [SendingHost]
+
+   From now on this process will be represented as with double arrows as
+   follows for simplification:
+
+      [RecievingHost] <<-- 'example' <<-- [SendingHost]
+      [RecievingHost] <<-- (128 chars)+'example' <<-- [SendingHost]
+      
+
+3. Username
+
+   When the TCP connection between the client and the server is
+   established, the first thing that happens is the client sends its
+   username to the server. This process is shown below:
+
+      [Server] <<-- username <<-- [Client]
+
+4. Outside-Of-Chat Choices
+
+   The next thing that happens after the username is sent is the client
+   sends its choice of action for its state of not currently interacting
+   with a specific group (Out-Of-Chat choice). The choice indicators
+   that can be sent for an Out-Of-Chat choice and their corresponding
+   choices are listed below:
+
+      '1' - Interact with the public group.
+      '2' - Interact with a private group.
+      '3' - Create a new group.
+      '4' - Delete an existing group.
+      '5' - Exit.
+
+   If the client sends '5' as its choice, that will indicate to the
+   server that the client is done interacting with it, and for all other
+   choices, after completing the client-server interactions associated
+   with that choice, the client will then send another choice to restart
+   the cycle. Here's an example of this interaction:
+
+
+Brandt                           Project                        [Page 2]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+      [Server] <-- '1' <-- [Client]
+      (Further client-server interactions)
+      [Server] <-- '2' <-- [Client]
+      (Further client-server interactions)
+      [Server] <-- '5' <-- [Client]
+
+4.1. Sending an ID
+
+   If the client made choices '2' '3' or '4' it will then need to send
+   an ID to the server. The server will respond by sending 'Already
+   exists.' if a group with that ID exists and 'Does not exist.'
+   otherwise. Here are some examples of this interaction:
+
+      Example 1
+      [Server] <<-- ID <<-- [Client]
+      [Server] --> 'Does not exist.' --> [Client]
+
+      Example 2
+      [Server] <<-- ID <<-- [Client]
+      [Server] --> 'Already exists.' --> [Client]
+
+   In the case of choice '4' specifically, if it first sent 'Already
+   exists.', the server will send a second message of 'Success' if the
+   group was deleted or 'Not the creator.' if the username deleting the
+   group is different form the one who made it: Here are some examples
+   of this interaction:
+
+      Example 1
+      [Server] <<-- ID <<-- [Client]
+      [Server] --> 'Already exists.'--> [Client]
+      [Server] --> 'Success.' --> [Client]
+      (Out-Of-Chat choice restarts)
+
+      Example 2
+      [Server] <<-- ID <<-- [Client]
+      [Server] --> 'Already exists.'--> [Client]
+      [Server] --> 'Not the creator.' --> [Client]
+      (Out-Of-Chat choice restarts)
+
+5. In-Chat Choices
+
+   If the client sends '1' or '2' as its choice above to start
+   interacting with a group, and the appropriate ID checking
+   interactions described above have already happened in the case of
+   '2', the client can think of every interaction that follows as with
+   respect to that specific group.
+
+5.1. Checking A Groups Existance
+
+   There are certain points in the sequence of interactions for
+
+
+Brandt                           Project                        [Page 3]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+   interacting with a specific group where a check must be performed for
+   if the group still exists, so that no further actions are attempted
+   if the group was deleted by another client. When this time comes, the
+   client first sends 'Ready for info.' to the server and then the
+   server replies with 'Still exists.' if the group still exists and 'No
+   longer exists.' otherwise. Here are some examples of this
+   interaction:
+
+      Example 1
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+
+      Example 2
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'No longer exists.' --> [Client]
+      (Out-Of-Chat choices resume)
+
+   If the client recieves 'No longer exists.' the interaction with the
+   group can be thought of as ended and the client must then send an
+   Outside-Of-Chat choice to kick off that cycle again.
+
+5.2. Making The Choice
+
+   When the client begins its interaction with the specific group, it
+   firsts checks if the group exists and then sends it's In-Chat choice,
+   which has a similar set of indicators to an Out-Of-Chat choice that
+   are shown below with their corresponding choices:
+
+      '1' - Get total number of messages.
+      '2' - Read all messages.
+      '3' - Get number of new messages.
+      '4' - Read new messages.
+      '5' - Read specific message.
+      '6' - Just read message subjects.
+      '7' - Send message.
+      '8' - Delete message.
+      '9' - Stop interacting with this group.
+
+   If the client sends '9' as its choice, the interaction with the group
+   can be thought of as ended and the client must then send an
+   Outside-Of-Chat choice to kick off that cycle again, and for all
+   other choices, after completing the client-server interactions
+   associated with that choice, the client will then, again, check if
+   the group exists and send another In-Chat choice to restart the
+   cycle. Here's some examples of this interaction:
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '1' <-- [Client]
+      (Further client-server interactions)
+
+
+Brandt                           Project                        [Page 4]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '8' <-- [Client]
+      (Further client-server interactions)
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '9' <-- [Client]
+      (Out-Of-Chat choices resume)
+
+5.3. Requests For Data
+
+   Choices '1'-'4' and '6' all take the form of simple requests for
+   data. For choices '1' and '3', the server will send a string
+   containing the number of total or new messages in the group
+   respectively. This will look like:
+
+      [Server] --> '7' --> [Client]
+      (In-Chat choice restarts)
+
+   For choices '2', '4', and '6', the server must send a string
+   containing all messages, the new messages, or just all of the
+   subjects respectively. This will look like:
+
+      [Server] -->> '----------------
+      Message #1
+      Sender: tester
+      Subject: Example Subject
+      Body: Example Body
+      ----------------' -->> [Client]
+      (In-Chat choice restarts)
+
+5.4. Sending A Message Number
+
+   If the client made choices '5' or '8' it will first need to check if
+   the group still exists and then it will then need to send a string
+   containing a positive integer message number to the server. It can
+   also send 'Disregard choice.' to undo the choice of '5' or '8' which
+   is useful if the client also needs to validate user input before
+   sending the message number. The server will then respond with 'In
+   range.' if a message with that number exists or 'Out of range'
+   otherwise. Here's some examples of this interaction:
+
+      Example 1
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '43' <-- [Client]
+      [Server] --> 'In range.' --> [Client]
+
+      Example 2
+      [Server] <-- 'Ready for info.' <-- [Client]
+
+
+Brandt                           Project                        [Page 5]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '43' <-- [Client]
+      [Server] --> 'Out of range.' --> [Client]
+      (In-Chat choice restarts)
+
+      Example 3
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- 'Disregard choice.' <-- [Client]
+      (In-Chat choice restarts)
+
+5.5. Reading A Specific Message
+
+   If the client made choice '5', it must first complete the above
+   process for sending a message number, and if it is in range, the
+   server will send a string containing the specific message requested.
+   Here's an example of this interaction:
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '43' <-- [Client]
+      [Server] --> 'In range.' --> [Client]
+      [Server] -->> '----------------
+      Message #43
+      Sender: tester
+      Subject: Example Subject
+      Body: Example Body
+      ----------------' -->> [Client]
+
+5.6. Sending A Message
+
+   https://www.youtube.com/watch?v=LbK5V9MFXpc
+   If the client made choice '7', the client will begin by checking if
+   the group still exists, then send a string containing the subject,
+   then check if the group still exists again, and then send a string
+   containing the body. Here's what this looks like:
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <<-- 'Example Subject' <<-- [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <<-- 'Example Body' <<-- [Client]
+      (In-Chat choice restarts)
+
+5.7. Deleting A Message
+
+   If the client made choice '8', it must first complete the above
+   process for sending a message number, and if it is in range, the
+   server will send 'Success.' if it deleted the message, or 'Not the
+
+
+Brandt                           Project                        [Page 6]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+   sender.' if the username deleting the message is different from the
+   one who sent it. Here are some examples of this interaction:
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '43' <-- [Client]
+      [Server] --> 'In range.' --> [Client]
+      [Server] --> 'Success.' --> [Client]
+      (In-Chat choice restarts)
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '43' <-- [Client]
+      [Server] --> 'In range.' --> [Client]
+      [Server] --> 'Not the sender.' --> [Client]
+      (In-Chat choice restarts)
+
+6. One Final Example
+
+   This section shows a complete and diverse client-server interaction
+   that follows this protocol from start to finish:
+
+      [Server] <<-- 'username0794' <<-- [Client]
+      [Server] <-- '1' <-- [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '2' <-- [Client]
+      [Server] --> '----------------
+      ----------------'  --> [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '7' <-- [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <<-- 'Example Subject' <<-- [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <<-- 'Example Body' <<-- [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '2' <-- [Client]
+      [Server] -->> '----------------
+      Message #1
+      Sender: tester
+      Subject: Example Subject
+      Body: Example Body
+      ----------------' -->> [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '8' <-- [Client]
+
+
+Brandt                           Project                        [Page 7]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
+
+
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '1' <-- [Client]
+      [Server] --> 'In range.' --> [Client]
+      [Server] --> 'Success.' --> [Client]
+      [Server] <-- 'Ready for info.' <-- [Client]
+      [Server] --> 'Still exists.' --> [Client]
+      [Server] <-- '9' <-- [Client]
+      [Server] <-- '5' <-- [Client]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
+
+
+
+
+
+
+
+
+
+
+
+Brandt                           Project                        [Page 8]
+
+RFC CMSC481           Bulletin Board Project Protocol      December 2021
